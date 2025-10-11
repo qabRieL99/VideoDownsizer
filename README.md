@@ -1,152 +1,201 @@
-# 📹 iPhone Video Compressor
+# 📹 iPhone Video Sıkıştırıcı
 
-A simple, user-friendly command-line tool for compressing video files using FFmpeg. Perfect for reducing iPhone video file sizes while maintaining good quality.
+Gelişmiş, kullanıcı dostu C# tabanlı video sıkıştırma aracı. FFmpeg kullanarak yüksek kaliteli video sıkıştırma işlemleri gerçekleştirir.
 
-## ✨ Features
+## ✨ Özellikler
 
-- **Drag & Drop Interface** - Simply drag video files into the console window
-- **Real-time Progress Bar** - Visual feedback during compression
-- **Batch Processing** - Process multiple videos in one session
-- **Smart Compression** - Uses H.264 codec with optimized settings (CRF 26)
-- **Metadata Preservation** - Keeps original video metadata intact
-- **Date Preservation** - Maintains original file creation and modification dates
-- **Compression Statistics** - Shows before/after file sizes and compression ratio
-- **Audio Notification** - Plays a beep sound when compression is complete
-- **Multi-format Support** - Works with MP4, MOV, MKV, AVI, WebM, M4V, and HEVC
+- **Sürükle-Bırak Desteği**: Video dosyalarını doğrudan konsola sürükleyip bırakın
+- **Toplu İşlem**: Birden fazla videoyu tek seferde işleyin
+- **İki İlerleme Çubuğu Stili**:
+  - 🌟 Gelişmiş: Detaylı 4 satır görünüm (FPS, bitrate, ETA, frame sayısı)
+  - ⚡ Minimal: Basit tek satır ilerleme çubuğu
+- **Özelleştirilebilir Kalite**: CRF (18-51) ayarı ile kalite/boyut dengesi
+- **Detaylı İstatistikler**: Sıkıştırma oranı, kazanılan alan, işlem hızı
+- **Metadata Koruma**: Orijinal dosya tarihleri ve bilgileri korunur
+- **Ses Bildirimi**: İşlem tamamlandığında sesli uyarı
+- **Sistem Bilgileri**: FFmpeg durumu ve sistem özellikleri görüntüleme
 
-## 🚀 Quick Start
+## 📋 Gereksinimler
 
-### Prerequisites
+### Zorunlu
+- **.NET Runtime**: .NET 6.0 veya üzeri
+- **FFmpeg**: Sistem PATH'inde yüklü olmalı
+- **İşletim Sistemi**: Windows, macOS veya Linux
 
-You need FFmpeg installed on your system:
+### FFmpeg Kurulumu
 
-**Windows:**
+#### Windows
 ```bash
+# Chocolatey ile
+choco install ffmpeg
+
+# Scoop ile
+scoop install ffmpeg
+
+# Winget ile
 winget install FFmpeg
 ```
-Or download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
-**macOS:**
+#### macOS
 ```bash
+# Homebrew ile
 brew install ffmpeg
 ```
 
-**Linux:**
+#### Linux
 ```bash
-sudo apt install ffmpeg  # Debian/Ubuntu
-sudo dnf install ffmpeg  # Fedora
+# Ubuntu/Debian
+sudo apt install ffmpeg
+
+# Fedora
+sudo dnf install ffmpeg
+
+# Arch Linux
+sudo pacman -S ffmpeg
 ```
 
-### Installation
+## 🚀 Kullanım
 
-1. Clone this repository:
+### 1. Program Başlatma
 ```bash
-git clone https://github.com/yourusername/iphone-video-compressor.git
-cd iphone-video-compressor
+# Derlenmiş .exe dosyasını çalıştırın
+VideoCompressor.exe
+
+# Veya .NET CLI ile
+dotnet run
 ```
 
-2. Build the project:
+### 2. Video İşleme Yöntemleri
+
+#### A. Tek Dosya İşleme
+1. Programı çalıştırın
+2. Video dosyasını konsola sürükleyin
+3. ENTER tuşuna basın
+
+#### B. Sürükle-Bırak Başlatma
+- Video dosyasını doğrudan .exe üzerine sürükleyin
+- İşlem otomatik başlar
+
+#### C. Toplu İşlem
+1. Programda `b` tuşuna basın
+2. Klasör yolu girin veya birden fazla dosyayı sürükleyin
+3. İşlem otomatik devam eder
+
+### 3. Komutlar
+
+| Komut | Açıklama |
+|-------|----------|
+| `s` | İlerleme çubuğu stilini değiştir |
+| `c` | CRF kalite ayarını değiştir (18-51) |
+| `b` | Toplu işlem modunu başlat |
+| `h` | Yardım menüsünü göster |
+| `i` | Sistem bilgilerini göster |
+| `q` | Programdan çık |
+
+## ⚙️ Sıkıştırma Ayarları
+
+### CRF (Constant Rate Factor) Değerleri
+
+| CRF Aralığı | Kalite | Boyut | Kullanım |
+|-------------|--------|-------|----------|
+| **18-22** | 🌟 Yüksek | Büyük | Arşivleme, profesyonel |
+| **23-26** | ⚖️ Dengeli | Orta | Günlük kullanım (önerilen) |
+| **27-32** | 📦 Düşük | Küçük | Paylaşım, web |
+| **33+** | ⚠️ Çok Düşük | Çok Küçük | Önerilmez |
+
+### Varsayılan Ayarlar
+- **Codec**: H.264 (libx264)
+- **CRF**: 26
+- **Preset**: veryfast
+- **Metadata**: Korunur
+
+## 📊 Desteklenen Formatlar
+
+- MP4
+- MOV
+- MKV
+- AVI
+- WebM
+- M4V
+- HEVC
+
+## 📁 Çıktı Dosyaları
+
+Sıkıştırılmış dosyalar orijinal dosyayla aynı klasöre kaydedilir:
+```
+Orijinal: video.mp4
+Çıktı:    video_compressed.mp4
+```
+
+## 💡 İpuçları
+
+- **Tipik Sıkıştırma**: %50-70 boyut azaltması
+- **Kalite**: CRF 23-26 arası genelde gözle fark edilmez
+- **Hız**: `veryfast` preset hızlı işleme sağlar
+- **Metadata**: Orijinal dosya tarihleri korunur
+- **Yedekleme**: Orijinal dosyalar silinmez
+
+## 🔧 Derleme
+
 ```bash
-dotnet build -c Release
+# Projeyi derle
+dotnet build
+
+# Release derlemesi
+dotnet publish -c Release -r win-x64 --self-contained false
+
+# Tek dosya olarak derle
+dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true
 ```
 
-3. Run the executable:
+## 📈 İstatistikler
+
+Program her işlem sonunda aşağıdaki bilgileri gösterir:
+
+- 📦 Orijinal ve sıkıştırılmış dosya boyutu
+- 💰 Kazanılan disk alanı
+- 🗜️ Sıkıştırma oranı (%)
+- ⏱️ İşlem süresi
+- ⚡ İşleme hızı (örn: 2.5x)
+- 🎬 Ortalama FPS
+
+## 🐛 Sorun Giderme
+
+### FFmpeg Bulunamadı
 ```bash
-cd bin/Release/net6.0  # or your target framework
-./VideoCompressor
+# FFmpeg'in PATH'de olduğunu kontrol edin
+ffmpeg -version
+
+# Yoksa yükleyin (yukarıdaki kurulum talimatlarına bakın)
 ```
 
-## 💡 Usage
+### Video İşlenemiyor
+- Video dosyasının bozuk olmadığından emin olun
+- Dosya yolunda Türkçe karakter varsa tırnak içinde yazın
+- Disk alanının yeterli olduğunu kontrol edin
 
-### Method 1: Drag & Drop onto Console
-1. Run the program
-2. Drag a video file into the console window
-3. Press Enter
-4. Wait for compression to complete
+### İlerleme Çubuğu Görünmüyor
+- Konsol penceresini tam ekran yapın
+- Minimal stil (`s` → `2`) deneyin
 
-### Method 2: Drag & Drop onto Executable
-- Drag a video file directly onto the `.exe` file
-- The program will process it and automatically close when done
+## 📝 Lisans
 
-### Method 3: Command Line
-```bash
-VideoCompressor "path/to/your/video.mp4"
-```
+Bu proje açık kaynaklıdır ve herhangi bir amaç için kullanılabilir.
 
-## 📊 Output
+## 🤝 Katkıda Bulunma
 
-The program creates a compressed video with `_compressed` suffix in the same directory as the original file.
+Katkılarınızı bekliyoruz! Özellikle:
+- Yeni özellikler
+- Hata düzeltmeleri
+- Dokümantasyon iyileştirmeleri
+- Çeviri desteği
 
-**Example:**
-```
-Input:  my_video.mp4
-Output: my_video_compressed.mp4
-```
+## 📧 İletişim
 
-### Statistics Display
-```
-╔════════════════════════════════════════╗
-║ Orijinal Boyut :          125.50 MB ║
-║ Sıkıştırılmış :            45.20 MB ║
-║ Azalma :                     %64.00 ║
-║ İşlem Süresi :              2d 15sn ║
-╚════════════════════════════════════════╝
-```
-
-## ⚙️ Compression Settings
-
-- **Codec:** H.264 (libx264)
-- **CRF:** 26 (good balance between quality and file size)
-- **Preset:** veryfast (faster encoding with slightly larger files)
-- **Metadata:** Preserved from original file
-
-### Customization
-
-To modify compression settings, edit the FFmpeg arguments in `CompressVideoWithProgress()`:
-
-```csharp
-ffmpeg.StartInfo.Arguments = $"-i \"{inputFile}\" -vcodec libx264 -crf 26 -preset veryfast ...";
-```
-
-**CRF values:**
-- 18-23: High quality (larger files)
-- 23-28: Medium quality (balanced)
-- 28-35: Lower quality (smaller files)
-
-**Presets:**
-- `ultrafast`, `superfast`, `veryfast`: Faster encoding
-- `fast`, `medium`, `slow`: Better compression
-- `slower`, `veryslow`: Best compression (much slower)
-
-## 🛠️ Technical Details
-
-- **Language:** C# (.NET)
-- **Dependencies:** FFmpeg (external)
-- **Platform:** Cross-platform (Windows, macOS, Linux)
-- **Target Framework:** .NET 6.0 or higher
-
-## 📝 Requirements
-
-- .NET 6.0 SDK or higher
-- FFmpeg installed and accessible from PATH
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built with [FFmpeg](https://ffmpeg.org/)
-- Inspired by the need to compress large iPhone videos
-
-## 📞 Support
-
-If you encounter any issues or have questions, please [open an issue](https://github.com/yourusername/iphone-video-compressor/issues).
+Sorularınız veya önerileriniz için issue açabilirsiniz.
 
 ---
 
-⭐ If you find this tool helpful, please consider giving it a star!
+**Not**: Bu araç iPhone videolarına özel optimize edilmiştir ancak tüm video formatları ile uyumludur.
+
+Made with ❤️ using C#, FFmpeg, and Mr. Claude
