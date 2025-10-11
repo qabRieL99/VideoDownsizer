@@ -1008,6 +1008,9 @@ class Program
         }
     }
 
+    // İlk çizim için başlangıç pozisyonunu sakla
+    private static int progressBarStartLine = -1;
+
     // STYLE 1: Enhanced Progress Bar
     static void DrawEnhancedProgressBar(ProgressState state, double totalDuration)
     {
@@ -1040,83 +1043,99 @@ class Program
             }
         }
 
-        ClearLines(4);
-
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.Write($"{spinnerChar} Progress: ");
-        Console.ForegroundColor = state.Progress < 0.3 ? ConsoleColor.Red :
-                                   state.Progress < 0.7 ? ConsoleColor.Yellow :
-                                   ConsoleColor.Green;
-        Console.Write($"[{bar}]");
-        Console.ForegroundColor = ConsoleColor.White;
-        Console.Write($" {state.Progress * 100:0.0}%");
-        Console.ResetColor();
-
-        Console.Write("\n");
-        Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.Write("⏱ Time: ");
-        Console.ForegroundColor = ConsoleColor.White;
-        Console.Write($"{timeString}");
-        Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.Write("  │  ⏳ ETA: ");
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.Write($"{eta}");
-        Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.Write("  │  🎬 Speed: ");
-        Console.ForegroundColor = ConsoleColor.White;
-        Console.Write($"{state.Fps:0.0} fps");
-        Console.ResetColor();
-
-        Console.Write("\n");
-        Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.Write("📊 Frame: ");
-        Console.ForegroundColor = ConsoleColor.White;
-        Console.Write($"{state.CurrentFrame:N0}");
-        Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.Write("  │  💾 Bitrate: ");
-        Console.ForegroundColor = ConsoleColor.White;
-        Console.Write($"{state.Bitrate:0.0} kb/s");
-        Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.Write("  │  📦 Processed: ");
-        Console.ForegroundColor = ConsoleColor.White;
-        Console.Write(FormatFileSize(state.ProcessedBytes));
-        Console.ResetColor();
-
-        Console.Write("\n");
-        Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.Write("🗜 Est. Compression: ");
-
-        if (state.ProcessedBytes > 0 && state.Progress > 0.05)
+        try
         {
-            long estimatedFinalSize = (long)(state.ProcessedBytes / state.Progress);
-            double estimatedRatio = (1 - ((double)estimatedFinalSize / state.OriginalSize)) * 100;
-            Console.ForegroundColor = estimatedRatio > 50 ? ConsoleColor.Green : ConsoleColor.Yellow;
-            Console.Write($"~{estimatedRatio:0.0}%");
-        }
-        else
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.Write("Calculating...");
-        }
-
-        Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.Write("  │  ⏰ Elapsed: ");
-        Console.ForegroundColor = ConsoleColor.White;
-        Console.Write(FormatDuration(elapsed));
-        Console.ResetColor();
-
-        if (state.Progress < 1.0)
-        {
-            // Kritik düzeltme: Negatif cursor position kontrolü
-            int targetLine = Math.Max(0, Console.CursorTop - 3);
-            try
+            // İlk çizimde pozisyonu kaydet
+            if (progressBarStartLine == -1)
             {
-                Console.SetCursorPosition(0, targetLine);
+                progressBarStartLine = Console.CursorTop;
             }
-            catch
+            else
             {
-                // Cursor positioning failed, continue anyway
+                // Kaydedilmiş pozisyona git
+                Console.SetCursorPosition(0, progressBarStartLine);
             }
+
+            // 4 satırı temizle
+            for (int i = 0; i < 4; i++)
+            {
+                Console.Write(new string(' ', Math.Min(Console.WindowWidth - 1, 120)));
+                if (i < 3) Console.WriteLine();
+            }
+
+            // Başa dön
+            Console.SetCursorPosition(0, progressBarStartLine);
+
+            // Satır 1: Progress Bar
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write($"{spinnerChar} Süreç: ");
+            Console.ForegroundColor = state.Progress < 0.3 ? ConsoleColor.Red :
+                                       state.Progress < 0.7 ? ConsoleColor.Yellow :
+                                       ConsoleColor.Green;
+            Console.Write($"[{bar}]");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write($" {state.Progress * 100:0.0}%");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            // Satır 2: Time, ETA, Speed
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.Write("⏱ Süre: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write($"{timeString}");
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.Write("  │  ⏳ Kalan Süre: ");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.Write($"{eta}");
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.Write("  │  🎬 Hız: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write($"{state.Fps:0.0} fps");
+            Console.ResetColor();
+            Console.WriteLine();
+
+            // Satır 3: Frame, Bitrate, Processed
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.Write("📊 Kare: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write($"{state.CurrentFrame:N0}");
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.Write("  │  💾 Bitrate: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write($"{state.Bitrate:0.0} kb/s");
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.Write("  │  📦 İşlenen: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write(FormatFileSize(state.ProcessedBytes));
+            Console.ResetColor();
+            Console.WriteLine();
+
+            // Satır 4: Est. Compression, Elapsed
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.Write("🗜 Tahmini Sıkıştırma: ");
+
+            if (state.ProcessedBytes > 0 && state.Progress > 0.05)
+            {
+                long estimatedFinalSize = (long)(state.ProcessedBytes / state.Progress);
+                double estimatedRatio = (1 - ((double)estimatedFinalSize / state.OriginalSize)) * 100;
+                Console.ForegroundColor = estimatedRatio > 50 ? ConsoleColor.Green : ConsoleColor.Yellow;
+                Console.Write($"~{estimatedRatio:0.0}%");
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.DarkGray;
+                Console.Write("Hesaplanıyor...");
+            }
+
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.Write("  │  ⏰ Geçen süre: ");
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write(FormatDuration(elapsed));
+            Console.ResetColor();
+        }
+        catch
+        {
+            // Cursor positioning failed, continue anyway
         }
     }
 
@@ -1158,7 +1177,7 @@ class Program
                 Console.Write(new string(' ', Math.Min(Console.WindowWidth - 1, 120)));
                 if (i < lineCount - 1) Console.Write("\n");
             }
-            
+
             int targetTop = Math.Max(0, currentTop - (lineCount - 1));
             Console.SetCursorPosition(0, targetTop);
         }
