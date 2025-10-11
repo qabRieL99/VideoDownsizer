@@ -12,8 +12,11 @@ class Program
     // Choose your progress bar style here: 1 = Enhanced, 2 = Minimal
     private static int PROGRESS_BAR_STYLE = 1;
     private static int CRF_QUALITY = 26; // Default CRF value (18-28 recommended)
+    private static readonly object historyLock = new object(); // Thread safety
     private static List<double> fpsHistory = new List<double>();
     private static List<double> bitrateHistory = new List<double>();
+    private static DateTime lastProgressUpdate = DateTime.MinValue;
+    private const int PROGRESS_UPDATE_THROTTLE_MS = 100; // Progress bar güncelleme throttle
 
     static void Main(string[] args)
     {
@@ -225,7 +228,7 @@ class Program
             Console.WriteLine("\n   Windows için hızlı kurulum:");
             Console.WriteLine("   • Chocolatey: choco install ffmpeg");
             Console.WriteLine("   • Scoop: scoop install ffmpeg");
-            Console.WriteLine("   • Winget: winget install FFmpeg");
+            Console.WriteLine("   • Winget: winget install ffmpeg");
             Console.ResetColor();
         }
 
@@ -305,18 +308,20 @@ class Program
     {
         try
         {
-            Process proc = new Process();
-            proc.StartInfo.FileName = Environment.OSVersion.Platform == PlatformID.Win32NT ? "where" : "which";
-            proc.StartInfo.Arguments = "ffmpeg";
-            proc.StartInfo.UseShellExecute = false;
-            proc.StartInfo.RedirectStandardOutput = true;
-            proc.StartInfo.CreateNoWindow = true;
-            proc.Start();
+            using (Process proc = new Process())
+            {
+                proc.StartInfo.FileName = Environment.OSVersion.Platform == PlatformID.Win32NT ? "where" : "which";
+                proc.StartInfo.Arguments = "ffmpeg";
+                proc.StartInfo.UseShellExecute = false;
+                proc.StartInfo.RedirectStandardOutput = true;
+                proc.StartInfo.CreateNoWindow = true;
+                proc.Start();
 
-            string output = proc.StandardOutput.ReadLine();
-            proc.WaitForExit();
+                string output = proc.StandardOutput.ReadLine();
+                proc.WaitForExit();
 
-            return output ?? "Bilinmiyor";
+                return output ?? "Bilinmiyor";
+            }
         }
         catch
         {
@@ -328,23 +333,25 @@ class Program
     {
         try
         {
-            Process ffmpeg = new Process();
-            ffmpeg.StartInfo.FileName = "ffmpeg";
-            ffmpeg.StartInfo.Arguments = "-version";
-            ffmpeg.StartInfo.UseShellExecute = false;
-            ffmpeg.StartInfo.RedirectStandardOutput = true;
-            ffmpeg.StartInfo.CreateNoWindow = true;
-            ffmpeg.Start();
-
-            string output = ffmpeg.StandardOutput.ReadLine();
-            ffmpeg.WaitForExit();
-
-            if (!string.IsNullOrEmpty(output))
+            using (Process ffmpeg = new Process())
             {
-                var match = Regex.Match(output, @"version ([\d.]+)");
-                if (match.Success)
+                ffmpeg.StartInfo.FileName = "ffmpeg";
+                ffmpeg.StartInfo.Arguments = "-version";
+                ffmpeg.StartInfo.UseShellExecute = false;
+                ffmpeg.StartInfo.RedirectStandardOutput = true;
+                ffmpeg.StartInfo.CreateNoWindow = true;
+                ffmpeg.Start();
+
+                string output = ffmpeg.StandardOutput.ReadLine();
+                ffmpeg.WaitForExit();
+
+                if (!string.IsNullOrEmpty(output))
                 {
-                    return match.Groups[1].Value;
+                    var match = Regex.Match(output, @"version ([\d.]+)");
+                    if (match.Success)
+                    {
+                        return match.Groups[1].Value;
+                    }
                 }
             }
         }
@@ -619,9 +626,12 @@ class Program
 
     static bool ProcessVideo(string inputFile)
     {
-        // Reset history
-        fpsHistory.Clear();
-        bitrateHistory.Clear();
+        // Reset history - Thread safe
+        lock (historyLock)
+        {
+            fpsHistory.Clear();
+            bitrateHistory.Clear();
+        }
 
         if (!File.Exists(inputFile))
         {
@@ -700,7 +710,7 @@ class Program
             Console.ResetColor();
         }
 
-        if (videoInfo != null)
+        if (videoInfo != null && videoInfo.IsValid())
         {
             Console.ForegroundColor = ConsoleColor.DarkGray;
             Console.WriteLine($"ℹ️  Çözünürlük: {videoInfo.Width}x{videoInfo.Height} | Codec: {videoInfo.Codec} | FPS: {videoInfo.Fps:0.0}");
@@ -708,7 +718,18 @@ class Program
             Console.WriteLine();
         }
 
-        CompressVideoWithProgress(inputFile, outputFile, duration, fileInfo.Length, videoInfo);
+        bool success = CompressVideoWithProgress(inputFile, outputFile, duration, fileInfo.Length, videoInfo);
+
+        if (!success)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("\n╔════════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║                    ❌ İŞLEM BAŞARISIZ                          ║");
+            Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
+            Console.WriteLine("\nSıkıştırma işlemi tamamlanamadı. FFmpeg hatası oluştu.");
+            Console.ResetColor();
+            return false;
+        }
 
         TimeSpan elapsed = DateTime.Now - start;
 
@@ -734,7 +755,7 @@ class Program
             Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
             Console.WriteLine("║                    ❌ İŞLEM BAŞARISIZ                          ║");
             Console.WriteLine("╚════════════════════════════════════════════════════════════════╝");
-            Console.WriteLine("\nSıkıştırma işlemi tamamlanamadı. FFmpeg çıktısını kontrol edin.");
+            Console.WriteLine("\nÇıktı dosyası oluşturulamadı.");
             Console.ResetColor();
             return false;
         }
@@ -742,19 +763,23 @@ class Program
 
     static void PlayCompletionAnimation()
     {
-        try
+        // Sadece Windows'ta çalışır
+        if (Environment.OSVersion.Platform == PlatformID.Win32NT)
         {
-            Console.Beep(800, 150);
-            System.Threading.Thread.Sleep(50);
-            Console.Beep(1000, 150);
-            System.Threading.Thread.Sleep(50);
-            Console.Beep(1200, 200);
-            System.Threading.Thread.Sleep(50);
-            Console.Beep(1400, 250);
-        }
-        catch
-        {
-            // Beep may not work on all systems
+            try
+            {
+                Console.Beep(800, 150);
+                System.Threading.Thread.Sleep(50);
+                Console.Beep(1000, 150);
+                System.Threading.Thread.Sleep(50);
+                Console.Beep(1200, 200);
+                System.Threading.Thread.Sleep(50);
+                Console.Beep(1400, 250);
+            }
+            catch
+            {
+                // Beep may not work on all systems
+            }
         }
     }
 
@@ -820,9 +845,17 @@ class Program
         Console.WriteLine(" ║");
 
         // Average FPS
-        if (fpsHistory.Count > 0)
+        double avgFps = 0;
+        lock (historyLock)
         {
-            double avgFps = fpsHistory.Average();
+            if (fpsHistory.Count > 0)
+            {
+                avgFps = fpsHistory.Average();
+            }
+        }
+
+        if (avgFps > 0)
+        {
             Console.Write(FormatLine("🎬 Ortalama FPS :", ""));
             Console.ForegroundColor = ConsoleColor.White;
             Console.Write($"{avgFps:0.0} fps".PadLeft(valueWidth));
@@ -841,106 +874,138 @@ class Program
         Console.ResetColor();
     }
 
-    static void CompressVideoWithProgress(string inputFile, string outputFile, double duration, long originalSize, VideoInfo videoInfo)
+    static bool CompressVideoWithProgress(string inputFile, string outputFile, double duration, long originalSize, VideoInfo videoInfo)
     {
-        Process ffmpeg = new Process();
-        ffmpeg.StartInfo.FileName = "ffmpeg";
-        ffmpeg.StartInfo.Arguments = $"-i \"{inputFile}\" -vcodec libx264 -crf {CRF_QUALITY} -preset veryfast -map_metadata 0 \"{outputFile}\" -y -progress pipe:2 -nostats";
-        ffmpeg.StartInfo.UseShellExecute = false;
-        ffmpeg.StartInfo.RedirectStandardError = true;
-        ffmpeg.StartInfo.RedirectStandardOutput = true;
-        ffmpeg.StartInfo.CreateNoWindow = true;
-
-        ProgressState state = new ProgressState
+        try
         {
-            StartTime = DateTime.Now,
-            Progress = 0,
-            OriginalSize = originalSize,
-            TotalDuration = duration,
-            VideoInfo = videoInfo
-        };
-
-        ffmpeg.Start();
-
-        string line;
-        while ((line = ffmpeg.StandardError.ReadLine()) != null)
-        {
-            // Parse time
-            var timeMatch = Regex.Match(line, @"time=(\d+):(\d+):(\d+)\.(\d+)");
-            if (timeMatch.Success)
+            using (Process ffmpeg = new Process())
             {
-                int hours = int.Parse(timeMatch.Groups[1].Value);
-                int minutes = int.Parse(timeMatch.Groups[2].Value);
-                int seconds = int.Parse(timeMatch.Groups[3].Value);
-                state.CurrentSeconds = hours * 3600 + minutes * 60 + seconds;
-                state.Progress = Math.Min(state.CurrentSeconds / duration, 1.0);
-            }
+                ffmpeg.StartInfo.FileName = "ffmpeg";
+                ffmpeg.StartInfo.Arguments = $"-i \"{inputFile}\" -vcodec libx264 -crf {CRF_QUALITY} -preset veryfast -map_metadata 0 \"{outputFile}\" -y -progress pipe:2 -nostats";
+                ffmpeg.StartInfo.UseShellExecute = false;
+                ffmpeg.StartInfo.RedirectStandardError = true;
+                ffmpeg.StartInfo.RedirectStandardOutput = true;
+                ffmpeg.StartInfo.CreateNoWindow = true;
 
-            // Parse bitrate
-            var bitrateMatch = Regex.Match(line, @"bitrate=\s*(\d+\.?\d*)kbits/s");
-            if (bitrateMatch.Success)
-            {
-                state.Bitrate = double.Parse(bitrateMatch.Groups[1].Value, CultureInfo.InvariantCulture);
-                bitrateHistory.Add(state.Bitrate);
-                if (bitrateHistory.Count > 50) bitrateHistory.RemoveAt(0);
-            }
+                ProgressState state = new ProgressState
+                {
+                    StartTime = DateTime.Now,
+                    Progress = 0,
+                    OriginalSize = originalSize,
+                    TotalDuration = duration,
+                    VideoInfo = videoInfo
+                };
 
-            // Parse fps
-            var fpsMatch = Regex.Match(line, @"fps=\s*(\d+\.?\d*)");
-            if (fpsMatch.Success)
-            {
-                state.Fps = double.Parse(fpsMatch.Groups[1].Value, CultureInfo.InvariantCulture);
-                state.FrameCount++;
-                fpsHistory.Add(state.Fps);
-                if (fpsHistory.Count > 50) fpsHistory.RemoveAt(0);
-            }
+                ffmpeg.Start();
 
-            // Parse frame number
-            var frameMatch = Regex.Match(line, @"frame=\s*(\d+)");
-            if (frameMatch.Success)
-            {
-                state.CurrentFrame = int.Parse(frameMatch.Groups[1].Value);
-            }
+                string line;
+                while ((line = ffmpeg.StandardError.ReadLine()) != null)
+                {
+                    // Parse time
+                    var timeMatch = Regex.Match(line, @"time=(\d+):(\d+):(\d+)\.(\d+)");
+                    if (timeMatch.Success)
+                    {
+                        int hours = int.Parse(timeMatch.Groups[1].Value);
+                        int minutes = int.Parse(timeMatch.Groups[2].Value);
+                        int seconds = int.Parse(timeMatch.Groups[3].Value);
+                        state.CurrentSeconds = hours * 3600 + minutes * 60 + seconds;
+                        state.Progress = Math.Min(state.CurrentSeconds / duration, 1.0);
+                    }
 
-            // Parse size
-            var sizeMatch = Regex.Match(line, @"total_size=(\d+)");
-            if (sizeMatch.Success)
-            {
-                state.ProcessedBytes = long.Parse(sizeMatch.Groups[1].Value);
-            }
+                    // Parse bitrate
+                    var bitrateMatch = Regex.Match(line, @"bitrate=\s*(\d+\.?\d*)kbits/s");
+                    if (bitrateMatch.Success)
+                    {
+                        state.Bitrate = double.Parse(bitrateMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+                        lock (historyLock)
+                        {
+                            bitrateHistory.Add(state.Bitrate);
+                            if (bitrateHistory.Count > 50) bitrateHistory.RemoveAt(0);
+                        }
+                    }
 
-            // Draw progress based on selected style
-            switch (PROGRESS_BAR_STYLE)
-            {
-                case 1:
-                    DrawEnhancedProgressBar(state, duration);
-                    break;
-                case 2:
-                    DrawMinimalProgressBar(state, duration);
-                    break;
+                    // Parse fps
+                    var fpsMatch = Regex.Match(line, @"fps=\s*(\d+\.?\d*)");
+                    if (fpsMatch.Success)
+                    {
+                        state.Fps = double.Parse(fpsMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+                        state.FrameCount++;
+                        lock (historyLock)
+                        {
+                            fpsHistory.Add(state.Fps);
+                            if (fpsHistory.Count > 50) fpsHistory.RemoveAt(0);
+                        }
+                    }
+
+                    // Parse frame number
+                    var frameMatch = Regex.Match(line, @"frame=\s*(\d+)");
+                    if (frameMatch.Success)
+                    {
+                        state.CurrentFrame = int.Parse(frameMatch.Groups[1].Value);
+                    }
+
+                    // Parse size
+                    var sizeMatch = Regex.Match(line, @"total_size=(\d+)");
+                    if (sizeMatch.Success)
+                    {
+                        state.ProcessedBytes = long.Parse(sizeMatch.Groups[1].Value);
+                    }
+
+                    // Throttle progress bar updates
+                    if ((DateTime.Now - lastProgressUpdate).TotalMilliseconds >= PROGRESS_UPDATE_THROTTLE_MS)
+                    {
+                        lastProgressUpdate = DateTime.Now;
+
+                        // Draw progress based on selected style
+                        switch (PROGRESS_BAR_STYLE)
+                        {
+                            case 1:
+                                DrawEnhancedProgressBar(state, duration);
+                                break;
+                            case 2:
+                                DrawMinimalProgressBar(state, duration);
+                                break;
+                        }
+                    }
+                }
+
+                ffmpeg.WaitForExit();
+
+                // Check exit code
+                if (ffmpeg.ExitCode != 0)
+                {
+                    return false;
+                }
+
+                // Show 100% completion
+                state.Progress = 1.0;
+                state.CurrentSeconds = duration;
+
+                switch (PROGRESS_BAR_STYLE)
+                {
+                    case 1:
+                        DrawEnhancedProgressBar(state, duration);
+                        Console.WriteLine("\n\n");
+                        break;
+                    case 2:
+                        DrawMinimalProgressBar(state, duration);
+                        Console.WriteLine("\n");
+                        break;
+                }
+
+                // Copy file dates
+                CopyFileDates(inputFile, outputFile);
+
+                return true;
             }
         }
-
-        ffmpeg.WaitForExit();
-
-        // Show 100% completion
-        state.Progress = 1.0;
-        state.CurrentSeconds = duration;
-
-        switch (PROGRESS_BAR_STYLE)
+        catch (Exception ex)
         {
-            case 1:
-                DrawEnhancedProgressBar(state, duration);
-                Console.WriteLine("\n\n");
-                break;
-            case 2:
-                DrawMinimalProgressBar(state, duration);
-                Console.WriteLine("\n");
-                break;
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"\n❌ Hata: {ex.Message}");
+            Console.ResetColor();
+            return false;
         }
-
-        // Copy file dates
-        CopyFileDates(inputFile, outputFile);
     }
 
     // STYLE 1: Enhanced Progress Bar
@@ -1042,7 +1107,16 @@ class Program
 
         if (state.Progress < 1.0)
         {
-            Console.SetCursorPosition(0, Console.CursorTop - 3);
+            // Kritik düzeltme: Negatif cursor position kontrolü
+            int targetLine = Math.Max(0, Console.CursorTop - 3);
+            try
+            {
+                Console.SetCursorPosition(0, targetLine);
+            }
+            catch
+            {
+                // Cursor positioning failed, continue anyway
+            }
         }
     }
 
@@ -1054,23 +1128,39 @@ class Program
         filledBlocks = Math.Min(filledBlocks, totalBlocks);
         string bar = new string('#', filledBlocks) + new string('-', totalBlocks - filledBlocks);
 
-        Console.CursorLeft = 0;
-        Console.ForegroundColor = ConsoleColor.White;
-        Console.Write($"[{bar}] {state.Progress * 100:0.0}% | {state.Fps:0.0} fps | {state.Bitrate:0.0} kb/s");
-        Console.ResetColor();
+        try
+        {
+            Console.CursorLeft = 0;
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write($"[{bar}] {state.Progress * 100:0.0}% | {state.Fps:0.0} fps | {state.Bitrate:0.0} kb/s");
+            Console.ResetColor();
+        }
+        catch
+        {
+            // Cursor positioning failed
+        }
     }
 
     static void ClearLines(int lineCount)
     {
         try
         {
-            Console.SetCursorPosition(0, Console.CursorTop);
+            int currentTop = Console.CursorTop;
+            // Negatif pozisyon kontrolü
+            if (currentTop < lineCount)
+            {
+                return; // Buffer'ın üstüne çıkamazsınız
+            }
+
+            Console.SetCursorPosition(0, currentTop);
             for (int i = 0; i < lineCount; i++)
             {
-                Console.Write(new string(' ', Console.WindowWidth - 1));
+                Console.Write(new string(' ', Math.Min(Console.WindowWidth - 1, 120)));
                 if (i < lineCount - 1) Console.Write("\n");
             }
-            Console.SetCursorPosition(0, Console.CursorTop - (lineCount - 1));
+            
+            int targetTop = Math.Max(0, currentTop - (lineCount - 1));
+            Console.SetCursorPosition(0, targetTop);
         }
         catch
         {
@@ -1104,19 +1194,21 @@ class Program
     {
         try
         {
-            Process ffprobe = new Process();
-            ffprobe.StartInfo.FileName = "ffprobe";
-            ffprobe.StartInfo.Arguments = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"";
-            ffprobe.StartInfo.UseShellExecute = false;
-            ffprobe.StartInfo.RedirectStandardOutput = true;
-            ffprobe.StartInfo.CreateNoWindow = true;
-            ffprobe.Start();
+            using (Process ffprobe = new Process())
+            {
+                ffprobe.StartInfo.FileName = "ffprobe";
+                ffprobe.StartInfo.Arguments = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{filePath}\"";
+                ffprobe.StartInfo.UseShellExecute = false;
+                ffprobe.StartInfo.RedirectStandardOutput = true;
+                ffprobe.StartInfo.CreateNoWindow = true;
+                ffprobe.Start();
 
-            string output = ffprobe.StandardOutput.ReadToEnd().Trim();
-            ffprobe.WaitForExit();
+                string output = ffprobe.StandardOutput.ReadToEnd().Trim();
+                ffprobe.WaitForExit();
 
-            if (double.TryParse(output, NumberStyles.Any, CultureInfo.InvariantCulture, out double seconds))
-                return seconds;
+                if (double.TryParse(output, NumberStyles.Any, CultureInfo.InvariantCulture, out double seconds))
+                    return seconds;
+            }
         }
         catch
         {
@@ -1130,49 +1222,51 @@ class Program
     {
         try
         {
-            Process ffprobe = new Process();
-            ffprobe.StartInfo.FileName = "ffprobe";
-            ffprobe.StartInfo.Arguments = $"-v error -select_streams v:0 -show_entries stream=width,height,codec_name,r_frame_rate -of default=noprint_wrappers=1 \"{filePath}\"";
-            ffprobe.StartInfo.UseShellExecute = false;
-            ffprobe.StartInfo.RedirectStandardOutput = true;
-            ffprobe.StartInfo.CreateNoWindow = true;
-            ffprobe.Start();
-
-            VideoInfo info = new VideoInfo();
-            string line;
-            while ((line = ffprobe.StandardOutput.ReadLine()) != null)
+            using (Process ffprobe = new Process())
             {
-                if (line.StartsWith("width="))
-                {
-                    if (int.TryParse(line.Substring(6), out int width))
-                    {
-                        info.Width = width;
-                    }
-                }
-                else if (line.StartsWith("height="))
-                {
-                    if (int.TryParse(line.Substring(7), out int height))
-                    {
-                        info.Height = height;
-                    }
-                }
-                else if (line.StartsWith("codec_name="))
-                {
-                    info.Codec = line.Substring(11);
-                }
-                else if (line.StartsWith("r_frame_rate="))
-                {
-                    string fps = line.Substring(13);
-                    var parts = fps.Split('/');
-                    if (parts.Length == 2 && double.TryParse(parts[0], out double num) && double.TryParse(parts[1], out double den) && den != 0)
-                    {
-                        info.Fps = num / den;
-                    }
-                }
-            }
+                ffprobe.StartInfo.FileName = "ffprobe";
+                ffprobe.StartInfo.Arguments = $"-v error -select_streams v:0 -show_entries stream=width,height,codec_name,r_frame_rate -of default=noprint_wrappers=1 \"{filePath}\"";
+                ffprobe.StartInfo.UseShellExecute = false;
+                ffprobe.StartInfo.RedirectStandardOutput = true;
+                ffprobe.StartInfo.CreateNoWindow = true;
+                ffprobe.Start();
 
-            ffprobe.WaitForExit();
-            return info;
+                VideoInfo info = new VideoInfo();
+                string line;
+                while ((line = ffprobe.StandardOutput.ReadLine()) != null)
+                {
+                    if (line.StartsWith("width="))
+                    {
+                        if (int.TryParse(line.Substring(6), out int width))
+                        {
+                            info.Width = width;
+                        }
+                    }
+                    else if (line.StartsWith("height="))
+                    {
+                        if (int.TryParse(line.Substring(7), out int height))
+                        {
+                            info.Height = height;
+                        }
+                    }
+                    else if (line.StartsWith("codec_name="))
+                    {
+                        info.Codec = line.Substring(11);
+                    }
+                    else if (line.StartsWith("r_frame_rate="))
+                    {
+                        string fps = line.Substring(13);
+                        var parts = fps.Split('/');
+                        if (parts.Length == 2 && double.TryParse(parts[0], out double num) && double.TryParse(parts[1], out double den) && den != 0)
+                        {
+                            info.Fps = num / den;
+                        }
+                    }
+                }
+
+                ffprobe.WaitForExit();
+                return info;
+            }
         }
         catch
         {
@@ -1245,4 +1339,10 @@ class VideoInfo
     public int Height { get; set; }
     public string Codec { get; set; }
     public double Fps { get; set; }
+
+    // Null/invalid check method
+    public bool IsValid()
+    {
+        return Width > 0 && Height > 0 && !string.IsNullOrEmpty(Codec) && Fps > 0;
+    }
 }
