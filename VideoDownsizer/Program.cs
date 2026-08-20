@@ -1,11 +1,21 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+
+class BatchProgressState
+{
+    public List<string> AllFiles { get; set; } = new();
+    public List<string> CompletedFiles { get; set; } = new();
+    public List<string> PendingFiles { get; set; } = new();
+    public List<string> FailedFiles { get; set; } = new();
+    public bool IsComplete { get; set; }
+}
 
 class Program
 {
@@ -550,13 +560,146 @@ class Program
         DisplayBanner();
     }
 
+    static string GetBatchProgressFilePath(List<string> files)
+    {
+        string directory = Path.GetDirectoryName(files.FirstOrDefault() ?? string.Empty) ?? Directory.GetCurrentDirectory();
+        return Path.Combine(directory, "video_downsizer_batch_progress.json");
+    }
+
+    static BatchProgressState? LoadBatchProgressState(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            string json = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<BatchProgressState>(json);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    static void SaveBatchProgressState(string path, BatchProgressState state)
+    {
+        string directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(path, JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    static void DeleteBatchProgressState(string path)
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+
+    static void DisplayBatchStatus(BatchProgressState state)
+    {
+        Console.ForegroundColor = ConsoleColor.DarkCyan;
+        Console.WriteLine("\n📋 Batch durumu:");
+        Console.WriteLine($"   ✅ Tamamlandı: {state.CompletedFiles.Count}");
+        Console.WriteLine($"   ⏳ Bekliyor: {state.PendingFiles.Count}");
+        Console.WriteLine($"   ❌ Başarısız: {state.FailedFiles.Count}");
+
+        Console.WriteLine("   Tamamlanan dosyalar:");
+        if (state.CompletedFiles.Count == 0)
+        {
+            Console.WriteLine("     - yok");
+        }
+        else
+        {
+            foreach (string completedFile in state.CompletedFiles)
+            {
+                Console.WriteLine($"     - {Path.GetFileName(completedFile)}");
+            }
+        }
+
+        Console.WriteLine("   Bekleyen dosyalar:");
+        if (state.PendingFiles.Count == 0)
+        {
+            Console.WriteLine("     - yok");
+        }
+        else
+        {
+            foreach (string pendingFile in state.PendingFiles)
+            {
+                Console.WriteLine($"     - {Path.GetFileName(pendingFile)}");
+            }
+        }
+
+        Console.ResetColor();
+    }
+
+    static bool ShouldPauseBatchAfterCurrentFile()
+    {
+        if (!Console.KeyAvailable)
+        {
+            return false;
+        }
+
+        ConsoleKeyInfo key = Console.ReadKey(true);
+        return key.KeyChar == 'p' || key.KeyChar == 'P';
+    }
+
     static void ProcessMultipleVideos(List<string> files)
     {
+        List<string> inputFiles = files.Distinct(StringComparer.InvariantCultureIgnoreCase).ToList();
+        string progressFile = GetBatchProgressFilePath(inputFiles);
+        BatchProgressState state = LoadBatchProgressState(progressFile);
+
+        if (state != null && state.PendingFiles.Count > 0)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"\n⚠ Önceki batch işleme durduruldu. {state.CompletedFiles.Count} dosya tamamlandı, {state.PendingFiles.Count} dosya bekliyor.");
+            Console.WriteLine("   Kaldığınız yerden devam etmek ister misiniz? (E/H)");
+            Console.ResetColor();
+            string response = Console.ReadLine()?.Trim().ToUpperInvariant();
+            if (response == "E" || response == "Y")
+            {
+                state.PendingFiles = state.PendingFiles.ToList();
+            }
+            else
+            {
+                state = new BatchProgressState
+                {
+                    AllFiles = inputFiles,
+                    CompletedFiles = new List<string>(),
+                    PendingFiles = inputFiles.ToList(),
+                    FailedFiles = new List<string>(),
+                    IsComplete = false
+                };
+            }
+        }
+        else
+        {
+            state = new BatchProgressState
+            {
+                AllFiles = inputFiles,
+                CompletedFiles = new List<string>(),
+                PendingFiles = inputFiles.ToList(),
+                FailedFiles = new List<string>(),
+                IsComplete = false
+            };
+        }
+
+        SaveBatchProgressState(progressFile, state);
+
         Console.Clear();
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine("╔════════════════════════════════════════════════════════════════╗");
-        Console.WriteLine($"║  📦 TOPLU İŞLEM: {files.Count} dosya bulundu                              ║");
+        Console.WriteLine($"║  📦 TOPLU İŞLEM: {state.AllFiles.Count} dosya bulundu                              ║");
         Console.WriteLine("╚════════════════════════════════════════════════════════════════╝\n");
+        Console.WriteLine("💡 'P' tuşuna basarsanız, mevcut dosya bittikten sonra durur ve kaldığınız yerden devam edebilirsiniz.");
         Console.ResetColor();
 
         long totalOriginalSize = 0;
@@ -564,36 +707,61 @@ class Program
         int successCount = 0;
         int failCount = 0;
 
-        for (int i = 0; i < files.Count; i++)
+        while (state.PendingFiles.Count > 0)
         {
+            string currentFile = state.PendingFiles[0];
+            state.PendingFiles.RemoveAt(0);
+
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"\n[{i + 1}/{files.Count}] İşleniyor...");
+            Console.WriteLine($"\n[{state.CompletedFiles.Count + 1}/{state.AllFiles.Count}] İşleniyor: {Path.GetFileName(currentFile)}");
             Console.ResetColor();
 
-            FileInfo originalFile = new FileInfo(files[i]);
+            FileInfo originalFile = new FileInfo(currentFile);
             totalOriginalSize += originalFile.Length;
 
-            bool success = ProcessVideo(files[i]);
+            bool success = ProcessVideo(currentFile);
 
             if (success)
             {
-                string outputFile = Path.Combine(
-                    Path.GetDirectoryName(files[i]),
-                    Path.GetFileNameWithoutExtension(files[i]) + "_compressed" + Path.GetExtension(files[i])
-                );
+                string outputFile = GetCompressedOutputPath(currentFile);
 
                 if (File.Exists(outputFile))
                 {
                     FileInfo compressedFile = new FileInfo(outputFile);
                     totalCompressedSize += compressedFile.Length;
+                    state.CompletedFiles.Add(currentFile);
                     successCount++;
+                }
+                else
+                {
+                    state.FailedFiles.Add(currentFile);
+                    failCount++;
                 }
             }
             else
             {
+                state.FailedFiles.Add(currentFile);
                 failCount++;
             }
+
+            SaveBatchProgressState(progressFile, state);
+            DisplayBatchStatus(state);
+
+            if (ShouldPauseBatchAfterCurrentFile())
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("\n⏸️ Tamam, bu dosyadan sonra sıkıştırmayı durduracağım.");
+                Console.WriteLine("   Programı yeniden başlattığında kaldığınız yerden devam edebilirsiniz.");
+                Console.ResetColor();
+                state.IsComplete = false;
+                SaveBatchProgressState(progressFile, state);
+                return;
+            }
         }
+
+        state.IsComplete = true;
+        SaveBatchProgressState(progressFile, state);
+        DeleteBatchProgressState(progressFile);
 
         // Final summary
         Console.WriteLine("\n");
@@ -622,6 +790,17 @@ class Program
             Console.WriteLine($"   💰 Toplam Kazanç: {FormatFileSize(totalSaved)} ({totalRatio:0.0}%)");
         }
         Console.ResetColor();
+    }
+
+    static string GetCompressedOutputPath(string inputFile)
+    {
+        string directory = Path.GetDirectoryName(inputFile) ?? ".";
+        string compressedDirectory = Path.Combine(directory, "compressed");
+        Directory.CreateDirectory(compressedDirectory);
+
+        string fileName = Path.GetFileNameWithoutExtension(inputFile);
+        string extension = Path.GetExtension(inputFile);
+        return Path.Combine(compressedDirectory, fileName + "_compressed" + extension);
     }
 
     static bool ProcessVideo(string inputFile)
@@ -653,9 +832,7 @@ class Program
             return false;
         }
 
-        string directory = Path.GetDirectoryName(inputFile);
-        string fileName = Path.GetFileNameWithoutExtension(inputFile);
-        string outputFile = Path.Combine(directory, fileName + "_compressed" + extension);
+        string outputFile = GetCompressedOutputPath(inputFile);
 
         // Check if output file already exists
         if (File.Exists(outputFile))
