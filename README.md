@@ -21,7 +21,7 @@ Gelişmiş, kullanıcı dostu C# tabanlı video sıkıştırma aracı. FFmpeg ku
 ## 📋 Gereksinimler
 
 ### Zorunlu
-- **.NET Runtime**: .NET 6.0 veya üzeri
+- **.NET Runtime**: .NET 10.0 veya üzeri
 - **FFmpeg**: Sistem PATH'inde yüklü olmalı
 - **FFprobe**: FFmpeg ile birlikte gelir (video bilgisi almak için)
 - **İşletim Sistemi**: Windows, macOS veya Linux
